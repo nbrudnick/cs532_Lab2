@@ -349,6 +349,24 @@ wait(void)
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
+
+/*implementing lottery scheduling is pretty easy. In the scheduler() function, sum the nice
+values for all the RUNNABLE processes (I created a function to do this.). Generate a random
+number (using your brand spanking new pseudo-random number
+generator) between 1 and the sum of nice values (put your mod hat on,
+there’s a high % you’ll need it). Loop again through the process table for all
+RUNNABLE processes, accumulating the nice values (this is different from
+the initial sum of nice values before). As soon as the accumulation of nice
+values exceeds the random number, schedule that process. Easy peasy.
+I will warn you about a condition that slowed me down. There will be times
+when there are not any RUNNABLE processes (i.e. the sum of nice values
+for all RUNNABLE processes is zero). When this is true, just keep looping in
+the scheduler. This occurs at startup.
+Instead of making the scheduler() function a twisted mess of #ifdef preprocessor
+statements, I just created a large #ifdef LOTTERY block and copied the exiting code into it
+and edited it to death in there, leaving the old scheduler code alone in the #else block. This
+made my life a lot easier.*/
+
 	void
 scheduler(void)
 {

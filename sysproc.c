@@ -131,9 +131,9 @@ sys_cps(void)
 #endif // CPS
 
 #ifdef LOTTERY
-# error This is where the sys_renice function should live.
-# error Put its full implementation in proc.c. I have a
-# error function called renice() in proc.c that is called
-# error by sys_renice(). The location can be found by looking
-# error one of the many LOTTERY blocks.
+//# error This is where the sys_renice function should live.
+//# error Put its full implementation in proc.c. I have a
+//# error function called renice() in proc.c that is called
+//# error by sys_renice(). The location can be found by looking
+//# error one of the many LOTTERY blocks.
 #endif // LOTTERY
