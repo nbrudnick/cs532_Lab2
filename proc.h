@@ -1,5 +1,7 @@
 #ifdef PROC_TIMES
 //# error Remember to put multi-include protection in here.
+#include "date.h"
+
 int suptime(void);
 #endif // PROC_TIMES
 
@@ -65,9 +67,16 @@ struct proc {
   char name[16];               // Process name (debugging)
 #ifdef PROC_TIMES
 //# error some new structure members go in here
-	rtctime begin_date;
-#endif // PROC_TIMES
-//# ifdef LOTTERY
+	struct rtcdate begin_date;
+
+
+	unsigned int ticks_total;//this will represent the total number of time ticks that the process has run
+	unsigned int ticks_begin;//this will be used to help calculate the total number of ticks the process has used
+	unsigned int sched_times;//this will be used to count the number of times the process has been sceduled to run
+
+
+# endif // PROC_TIMES
+# ifdef LOTTERY
 //#  error something nice should go in here
 # endif // LOTTERY
 };

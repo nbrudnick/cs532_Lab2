@@ -145,10 +145,10 @@ sched_times to zero in the same area of the code (when a new process is allocate
 	unsigned int ticks_total;//this will represent the total number of time ticks that the process has run
 	unsigned int ticks_begin;//this will be used to help calculate the total number of ticks the process has used
 	unsigned int sched_times;//this will be used to count the number of times the process has been sceduled to run*/
-	 cmostime(&(p->begin_time));
-	 p->begin_time.ticks_total = 0;
-	 p->begin_time.ticks_begin = 0;
-	 p->begin_time.sched_times = 0;
+	 cmostime(&(p->begin_date));
+	 p->ticks_total = 0;
+	 p->ticks_begin = 0;
+	 p->sched_times = 0;
 #endif // PROC_TIMES
 #ifdef LOTTERY
 //# error this is a good place to set the default nice value
@@ -441,8 +441,8 @@ scheduler(void)
 #ifdef PROC_TIMES
 			/*does 2 things, it increments the sched_times member for the chosen process, and sets the
 ticks_begin member to the current number of ticks that have accumulated for the vm.*/
-			/*++(p->begin_time.ticks_begin);
-			(p->begin_time.ticks_begin);*/
+			++(p->sched_times);
+			(p->ticks_begin) = suptime();
 
 //# error this is just before a process is scheduled
 #endif // PROC_TIMES
@@ -452,6 +452,12 @@ ticks_begin member to the current number of ticks that have accumulated for the 
 
 #ifdef PROC_TIMES
 //# error this is just after a process is scheduled
+			/*
+swtch() and switchkvm(), and it returns back to scheduler following those calls. Looks
+like a good place to update the total_ticks member of the process (after return from
+switchkvm()), within an #ifdef block of course.*/
+			++(p->ticks_total);
+			++(p->sched_times);
 #endif // PROC_TIMES
       
       // Process is done running for now.
@@ -644,6 +650,17 @@ procdump(void)
 #endif // LOTTERY
 
 #ifdef CPS
+/*Now that you have all this great time tracking information for each process, modify your
+proc_cps function to display it.
+	 One of the fun things you’ll notice is that you may need to put a zero in
+where a value is represented as a single digit. Notice that the month
+shown in the start time is 04, not just 4. It’s a simple trick, but
+worth learning. If you had a fully functioning printf() (or for this
+example in cprintf()), it would be just a change to the format
+string. However, your printf() is not capable of that (and don’t
+spend the month or 6 working on the format characters in the xv6 version of printf()).
+Isn’t the ternary operator a wonderful thing?
+*/
 int
 proc_cps(void)
 {
@@ -657,7 +674,12 @@ proc_cps(void)
         );
 #ifdef PROC_TIMES
 //# error This is an excellent place to add some new header into to the o/p of cps
+		
+    cprintf(
+        "\tstart time\t\tticks\tsched"
+        );
 #endif // PROC_TIMES
+		
     cprintf("\n");
     for (i = 0; i < NPROC; i++) {
         if (ptable.proc[i].state != UNUSED) {
@@ -677,6 +699,46 @@ proc_cps(void)
                 );
 #ifdef PROC_TIMES
 //# error this is an excellent place to add some new data to the o/p of cps
+						/*
+struct rtcdate {
+  uint second;
+  uint minute;
+  uint hour;
+  uint day;
+  uint month;
+  uint year;
+condition ? expression_if_true : expression_if_false;
+\t%d-%s%d-%s%d %s%d:%s%d:%s%d\t%u\t%u
+	*/
+            cprintf("\t%d-%s%d-%s%d %s%d:%s%d:%s%d\t%u\t%u"
+                    , ptable.proc[i].begin_date.year 
+                    , (ptable.proc[i].begin_date.month < 10 ? "0" : "")
+                    , ptable.proc[i].begin_date.month
+                    , (ptable.proc[i].begin_date.day < 10 ? "0" : "")
+                    , ptable.proc[i].begin_date.day
+                    , (ptable.proc[i].begin_date.hour < 10 ? "0" : "")
+                    , ptable.proc[i].begin_date.hour
+                    , (ptable.proc[i].begin_date.minute < 10 ? "0" : "")
+                    , ptable.proc[i].begin_date.minute
+                    , (ptable.proc[i].begin_date.second < 10 ? "0" : "")
+                    , ptable.proc[i].begin_date.second
+                    , ptable.proc[i].ticks_total
+                    , ptable.proc[i].sched_times
+								);
+										
+						/*
+            cprintf("%d-", ptable.proc[i].begin_date.year);
+            ptable.proc[i].begin_date.month < 10 ? cprintf("0%d-", ptable.proc[i].begin_date.month) : cprintf("%d-", ptable.proc[i].begin_date.month);
+            ptable.proc[i].begin_date.day < 10 ? cprintf("0%d ", ptable.proc[i].begin_date.day) : cprintf("%d ", ptable.proc[i].begin_date.day);
+
+            ptable.proc[i].begin_date.hour < 10 ? cprintf("0%d:", ptable.proc[i].begin_date.hour) : cprintf("%d:", ptable.proc[i].begin_date.hour);
+            ptable.proc[i].begin_date.minute < 10 ? cprintf("0%d:", ptable.proc[i].begin_date.minute) : cprintf("%d:", ptable.proc[i].begin_date.minute);
+            ptable.proc[i].begin_date.second < 10 ? cprintf("0%d\t", ptable.proc[i].begin_date.second) : cprintf("%d\t", ptable.proc[i].begin_date.second);
+
+            cprintf("%d", ptable.proc[i].ticks_total);
+            cprintf("%d", ptable.proc[i].sched_times);*/
+
+//----------------------------------------------------------------
 #endif // PROC_TIMES
             cprintf("\n");
         }
