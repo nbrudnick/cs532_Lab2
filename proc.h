@@ -3,6 +3,7 @@
 #include "date.h"
 
 int suptime(void);
+int unsigned count_total_nice(void);
 #endif // PROC_TIMES
 
 #ifdef PROC_TIMES

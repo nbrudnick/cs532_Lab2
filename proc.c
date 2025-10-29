@@ -351,21 +351,37 @@ wait(void)
 //      via swtch back to the scheduler.
 
 /*implementing lottery scheduling is pretty easy. In the scheduler() function, sum the nice
-values for all the RUNNABLE processes (I created a function to do this.). Generate a random
-number (using your brand spanking new pseudo-random number
-generator) between 1 and the sum of nice values (put your mod hat on,
-there’s a high % you’ll need it). Loop again through the process table for all
-RUNNABLE processes, accumulating the nice values (this is different from
-the initial sum of nice values before). As soon as the accumulation of nice
-values exceeds the random number, schedule that process. Easy peasy.
-I will warn you about a condition that slowed me down. There will be times
-when there are not any RUNNABLE processes (i.e. the sum of nice values
-for all RUNNABLE processes is zero). When this is true, just keep looping in
-the scheduler. This occurs at startup.
-Instead of making the scheduler() function a twisted mess of #ifdef preprocessor
-statements, I just created a large #ifdef LOTTERY block and copied the exiting code into it
-and edited it to death in there, leaving the old scheduler code alone in the #else block. This
-made my life a lot easier.*/
+	values for all the RUNNABLE processes (I created a function to do this.). Generate a random
+	number (using your brand spanking new pseudo-random number
+	generator) between 1 and the sum of nice values (put your mod hat on,
+	there’s a high % you’ll need it). Loop again through the process table for all
+	RUNNABLE processes, accumulating the nice values (this is different from
+	the initial sum of nice values before). As soon as the accumulation of nice
+	values exceeds the random number, schedule that process. Easy peasy.
+	I will warn you about a condition that slowed me down. There will be times
+	when there are not any RUNNABLE processes (i.e. the sum of nice values
+	for all RUNNABLE processes is zero). When this is true, just keep looping in
+	the scheduler. This occurs at startup.
+	Instead of making the scheduler() function a twisted mess of #ifdef preprocessor
+	statements, I just created a large #ifdef LOTTERY block and copied the exiting code into it
+	and edited it to death in there, leaving the old scheduler code alone in the #else block. This
+	made my life a lot easier.*/
+	uint 
+count_total_nice()
+{
+	struct proc *p;
+	uint total = 0;
+
+	for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+	{
+		if(p->state != RUNNABLE)
+			continue;
+
+		total = total + p->nice_value;
+	}
+
+	return total;
+}
 
 	void
 scheduler(void)
@@ -377,52 +393,80 @@ scheduler(void)
 	struct cpu *c = mycpu();
 	c->proc = 0;
 
+	uint counter = 0;
+	uint total_nice = 0;
+	uint winner  = 0;
+
+
 	for( ; ; ) {
 		// Enable interrupts on this processor.
 		sti();
-
 		// Loop over process table looking for process to run.
 		acquire(&ptable.lock);
-		for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+		counter = 0;
+		total_nice = count_total_nice();
+		//total_nice > 1 ? total_nice = total_nice : continue;
+
+		if (total_nice <= 0) {
+
+			release(&ptable.lock);
+			continue;
+		}
+
+
+		winner = ((rand()) % (total_nice)) + MIN_NICE_VALUE;
+
+
+		//lottery
+		p = ptable.proc;
+//		while(p < &ptable.proc[NPROC])
+	for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+		{
 			if(p->state != RUNNABLE)
 				continue;
 
-			// Switch to chosen process.  It is the process's job
-			// to release ptable.lock and then reacquire it
-			// before jumping back to us.
-			c->proc = p;
-			switchuvm(p);
-			p->state = RUNNING;
+			counter += p->nice_value;
+			if(counter >= winner) break;
 
-#ifdef PROC_TIMES
-			/*does 2 things, it increments the sched_times member for the chosen process, and sets the
-				ticks_begin member to the current number of ticks that have accumulated for the vm.*/
-			++(p->sched_times);
-			(p->ticks_begin) = suptime();
-
-			//# error this is just before a process is scheduled
-#endif // PROC_TIMES
-
-			swtch(&(c->scheduler), p->context);
-			switchkvm();
-
-#ifdef PROC_TIMES
-			//# error this is just after a process is scheduled
-			/*
-				 swtch() and switchkvm(), and it returns back to scheduler following those calls. Looks
-				 like a good place to update the total_ticks member of the process (after return from
-				 switchkvm()), within an #ifdef block of course.*/
-			++(p->ticks_total);
-			++(p->sched_times);
-#endif // PROC_TIMES
-
-			// Process is done running for now.
-			// It should have changed its p->state before coming back.
-			c->proc = 0;
 		}
+
+
+		// Switch to chosen process.  It is the process's job
+		// to release ptable.lock and then reacquire it
+		// before jumping back to us.
+		c->proc = p;
+		switchuvm(p);
+		p->state = RUNNING;
+
+#ifdef PROC_TIMES
+		/*does 2 things, it increments the sched_times member for the chosen process, and sets the
+			ticks_begin member to the current number of ticks that have accumulated for the vm.*/
+		++(p->sched_times);
+		(p->ticks_begin) = suptime();
+
+		//# error this is just before a process is scheduled
+#endif // PROC_TIMES
+
+		swtch(&(c->scheduler), p->context);
+		switchkvm();
+
+#ifdef PROC_TIMES
+		//# error this is just after a process is scheduled
+		/*
+			 swtch() and switchkvm(), and it returns back to scheduler following those calls. Looks
+			 like a good place to update the total_ticks member of the process (after return from
+			 switchkvm()), within an #ifdef block of course.*/
+		++(p->ticks_total);
+		//++(p->sched_times);
+#endif // PROC_TIMES
+
+		// Process is done running for now.
+		// It should have changed its p->state before coming back.
+		c->proc = 0;
 		release(&ptable.lock);
 	}
-		/*# error When I made the changes to the scheduler function for the LOTTERY
+}
+/*# error When I made the changes to the scheduler function for the LOTTERY
 # error scheduler, they were extensive. So, instead of having a plethora
 # error nested, twisted, gnarley, overlapping #ifdef-s for LOTTERY, I just
 # error #ifdef-ed the entire existing scheduler code and have a block
@@ -431,342 +475,341 @@ scheduler(void)
 # error   You can answer that silently in your head...*/
 #else // LOTTERY
 
-		struct proc *p;
-		struct cpu *c = mycpu();
+struct proc *p;
+struct cpu *c = mycpu();
+c->proc = 0;
+
+for( ; ; ) {
+	// Enable interrupts on this processor.
+	sti();
+
+	// Loop over process table looking for process to run.
+	acquire(&ptable.lock);
+	for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+		if(p->state != RUNNABLE)
+			continue;
+
+		// Switch to chosen process.  It is the process's job
+		// to release ptable.lock and then reacquire it
+		// before jumping back to us.
+		c->proc = p;
+		switchuvm(p);
+		p->state = RUNNING;
+
+#ifdef PROC_TIMES
+		/*does 2 things, it increments the sched_times member for the chosen process, and sets the
+			ticks_begin member to the current number of ticks that have accumulated for the vm.*/
+		++(p->sched_times);
+		(p->ticks_begin) = suptime();
+
+		//# error this is just before a process is scheduled
+#endif // PROC_TIMES
+
+		swtch(&(c->scheduler), p->context);
+		switchkvm();
+
+#ifdef PROC_TIMES
+		//# error this is just after a process is scheduled
+		/*
+			 swtch() and switchkvm(), and it returns back to scheduler following those calls. Looks
+			 like a good place to update the total_ticks member of the process (after return from
+			 switchkvm()), within an #ifdef block of course.*/
+		++(p->ticks_total);
+		++(p->sched_times);
+#endif // PROC_TIMES
+
+		// Process is done running for now.
+		// It should have changed its p->state before coming back.
 		c->proc = 0;
+	}
+	release(&ptable.lock);
 
-		for( ; ; ) {
-			// Enable interrupts on this processor.
-			sti();
-
-			// Loop over process table looking for process to run.
-			acquire(&ptable.lock);
-			for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-				if(p->state != RUNNABLE)
-					continue;
-
-				// Switch to chosen process.  It is the process's job
-				// to release ptable.lock and then reacquire it
-				// before jumping back to us.
-				c->proc = p;
-				switchuvm(p);
-				p->state = RUNNING;
-
-#ifdef PROC_TIMES
-				/*does 2 things, it increments the sched_times member for the chosen process, and sets the
-					ticks_begin member to the current number of ticks that have accumulated for the vm.*/
-				++(p->sched_times);
-				(p->ticks_begin) = suptime();
-
-				//# error this is just before a process is scheduled
-#endif // PROC_TIMES
-
-				swtch(&(c->scheduler), p->context);
-				switchkvm();
-
-#ifdef PROC_TIMES
-				//# error this is just after a process is scheduled
-				/*
-					 swtch() and switchkvm(), and it returns back to scheduler following those calls. Looks
-					 like a good place to update the total_ticks member of the process (after return from
-					 switchkvm()), within an #ifdef block of course.*/
-				++(p->ticks_total);
-				++(p->sched_times);
-#endif // PROC_TIMES
-
-				// Process is done running for now.
-				// It should have changed its p->state before coming back.
-				c->proc = 0;
-			}
-			release(&ptable.lock);
-
-		}
+}
 #endif //LOTTERY
 
-	}
 #ifdef LOTTERY
-	//# error I put a fuction here to sum up the nice values from
-	//# error processes here.
+//# error I put a fuction here to sum up the nice values from
+//# error processes here.
 #endif // LOTTERY
 
-	// Enter scheduler.  Must hold only ptable.lock
-	// and have changed proc->state. Saves and restores
-	// intena because intena is a property of this
-	// kernel thread, not this CPU. It should
-	// be proc->intena and proc->ncli, but that would
-	// break in the few places where a lock is held but
-	// there's no process.
+// Enter scheduler.  Must hold only ptable.lock
+// and have changed proc->state. Saves and restores
+// intena because intena is a property of this
+// kernel thread, not this CPU. It should
+// be proc->intena and proc->ncli, but that would
+// break in the few places where a lock is held but
+// there's no process.
 	void
-		sched(void)
-		{
-			int intena;
-			struct proc *p = myproc();
+sched(void)
+{
+	int intena;
+	struct proc *p = myproc();
 
-			if(!holding(&ptable.lock))
-				panic("sched ptable.lock");
-			if(mycpu()->ncli != 1)
-				panic("sched locks");
-			if(p->state == RUNNING)
-				panic("sched running");
-			if(readeflags()&FL_IF)
-				panic("sched interruptible");
-			intena = mycpu()->intena;
-			swtch(&p->context, mycpu()->scheduler);
-			mycpu()->intena = intena;
-		}
+	if(!holding(&ptable.lock))
+		panic("sched ptable.lock");
+	if(mycpu()->ncli != 1)
+		panic("sched locks");
+	if(p->state == RUNNING)
+		panic("sched running");
+	if(readeflags()&FL_IF)
+		panic("sched interruptible");
+	intena = mycpu()->intena;
+	swtch(&p->context, mycpu()->scheduler);
+	mycpu()->intena = intena;
+}
 
-	// Give up the CPU for one scheduling round.
+// Give up the CPU for one scheduling round.
 	void
-		yield(void)
-		{
-			acquire(&ptable.lock);  //DOC: yieldlock
-			myproc()->state = RUNNABLE;
-			sched();
-			release(&ptable.lock);
-		}
+yield(void)
+{
+	acquire(&ptable.lock);  //DOC: yieldlock
+	myproc()->state = RUNNABLE;
+	sched();
+	release(&ptable.lock);
+}
 
-	// A fork child's very first scheduling by scheduler()
-	// will swtch here.  "Return" to user space.
+// A fork child's very first scheduling by scheduler()
+// will swtch here.  "Return" to user space.
 	void
-		forkret(void)
-		{
-			static int first = 1;
-			// Still holding ptable.lock from scheduler.
-			release(&ptable.lock);
+forkret(void)
+{
+	static int first = 1;
+	// Still holding ptable.lock from scheduler.
+	release(&ptable.lock);
 
-			if (first) {
-				// Some initialization functions must be run in the context
-				// of a regular process (e.g., they call sleep), and thus cannot
-				// be run from main().
-				first = 0;
-				iinit(ROOTDEV);
-				initlog(ROOTDEV);
-			}
+	if (first) {
+		// Some initialization functions must be run in the context
+		// of a regular process (e.g., they call sleep), and thus cannot
+		// be run from main().
+		first = 0;
+		iinit(ROOTDEV);
+		initlog(ROOTDEV);
+	}
 
-			// Return to "caller", actually trapret (see allocproc).
-		}
+	// Return to "caller", actually trapret (see allocproc).
+}
 
-	// Atomically release lock and sleep on chan.
-	// Reacquires lock when awakened.
+// Atomically release lock and sleep on chan.
+// Reacquires lock when awakened.
 	void
-		sleep(void *chan, struct spinlock *lk)
-		{
-			struct proc *p = myproc();
+sleep(void *chan, struct spinlock *lk)
+{
+	struct proc *p = myproc();
 
-			if(p == 0)
-				panic("sleep");
+	if(p == 0)
+		panic("sleep");
 
-			if(lk == 0)
-				panic("sleep without lk");
+	if(lk == 0)
+		panic("sleep without lk");
 
-			// Must acquire ptable.lock in order to
-			// change p->state and then call sched.
-			// Once we hold ptable.lock, we can be
-			// guaranteed that we won't miss any wakeup
-			// (wakeup runs with ptable.lock locked),
-			// so it's okay to release lk.
-			if(lk != &ptable.lock){  //DOC: sleeplock0
-				acquire(&ptable.lock);  //DOC: sleeplock1
-				release(lk);
-			}
-			// Go to sleep.
-			p->chan = chan;
-			p->state = SLEEPING;
+	// Must acquire ptable.lock in order to
+	// change p->state and then call sched.
+	// Once we hold ptable.lock, we can be
+	// guaranteed that we won't miss any wakeup
+	// (wakeup runs with ptable.lock locked),
+	// so it's okay to release lk.
+	if(lk != &ptable.lock){  //DOC: sleeplock0
+		acquire(&ptable.lock);  //DOC: sleeplock1
+		release(lk);
+	}
+	// Go to sleep.
+	p->chan = chan;
+	p->state = SLEEPING;
 
-			sched();
+	sched();
 
-			// Tidy up.
-			p->chan = 0;
+	// Tidy up.
+	p->chan = 0;
 
-			// Reacquire original lock.
-			if(lk != &ptable.lock){  //DOC: sleeplock2
-				release(&ptable.lock);
-				acquire(lk);
-			}
-		}
+	// Reacquire original lock.
+	if(lk != &ptable.lock){  //DOC: sleeplock2
+		release(&ptable.lock);
+		acquire(lk);
+	}
+}
 
-	//PAGEBREAK!
-	// Wake up all processes sleeping on chan.
-	// The ptable lock must be held.
+//PAGEBREAK!
+// Wake up all processes sleeping on chan.
+// The ptable lock must be held.
 	static void
-		wakeup1(void *chan)
-		{
-			struct proc *p;
+wakeup1(void *chan)
+{
+	struct proc *p;
 
-			for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-				if(p->state == SLEEPING && p->chan == chan)
-					p->state = RUNNABLE;
-		}
+	for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+		if(p->state == SLEEPING && p->chan == chan)
+			p->state = RUNNABLE;
+}
 
-	// Wake up all processes sleeping on chan.
+// Wake up all processes sleeping on chan.
 	void
-		wakeup(void *chan)
-		{
-			acquire(&ptable.lock);
-			wakeup1(chan);
-			release(&ptable.lock);
-		}
+wakeup(void *chan)
+{
+	acquire(&ptable.lock);
+	wakeup1(chan);
+	release(&ptable.lock);
+}
 
-	// Kill the process with the given pid.
-	// Process won't exit until it returns
-	// to user space (see trap in trap.c).
+// Kill the process with the given pid.
+// Process won't exit until it returns
+// to user space (see trap in trap.c).
 	int
-		kill(int pid)
-		{
-			struct proc *p;
+kill(int pid)
+{
+	struct proc *p;
 
-			acquire(&ptable.lock);
-			for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-				if(p->pid == pid){
-					p->killed = 1;
-					// Wake process from sleep if necessary.
-					if(p->state == SLEEPING)
-						p->state = RUNNABLE;
-					release(&ptable.lock);
-					return 0;
-				}
-			}
+	acquire(&ptable.lock);
+	for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+		if(p->pid == pid){
+			p->killed = 1;
+			// Wake process from sleep if necessary.
+			if(p->state == SLEEPING)
+				p->state = RUNNABLE;
 			release(&ptable.lock);
-			return -1;
+			return 0;
 		}
+	}
+	release(&ptable.lock);
+	return -1;
+}
 
-	//PAGEBREAK: 36
-	// Print a process listing to console.  For debugging.
-	// Runs when user types ^P on console.
-	// No lock to avoid wedging a stuck machine further.
+//PAGEBREAK: 36
+// Print a process listing to console.  For debugging.
+// Runs when user types ^P on console.
+// No lock to avoid wedging a stuck machine further.
 	void
-		procdump(void)
-		{
-			int i;
-			struct proc *p;
-			char *state;
-			uint pc[10];
+procdump(void)
+{
+	int i;
+	struct proc *p;
+	char *state;
+	uint pc[10];
 
-			for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-				if(p->state == UNUSED)
-					continue;
-				if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
-					state = states[p->state];
-				else
-					state = "???";
-				cprintf("%d %s %s", p->pid, state, p->name);
-				if(p->state == SLEEPING){
-					getcallerpcs((uint*)p->context->ebp+2, pc);
-					for(i=0; i<10 && pc[i] != 0; i++)
-						cprintf(" %p", pc[i]);
-				}
-				cprintf("\n");
-			}
+	for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+		if(p->state == UNUSED)
+			continue;
+		if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+			state = states[p->state];
+		else
+			state = "???";
+		cprintf("%d %s %s", p->pid, state, p->name);
+		if(p->state == SLEEPING){
+			getcallerpcs((uint*)p->context->ebp+2, pc);
+			for(i=0; i<10 && pc[i] != 0; i++)
+				cprintf(" %p", pc[i]);
 		}
+		cprintf("\n");
+	}
+}
 
 #ifdef LOTTERY
-	//# error I put the implementation of renice() in here. It is called
-	//# error by the sys_uptime() function in sysproc.c.
+//# error I put the implementation of renice() in here. It is called
+//# error by the sys_uptime() function in sysproc.c.
 #endif // LOTTERY
 
 #ifdef CPS
-	/*Now that you have all this great time tracking information for each process, modify your
-		proc_cps function to display it.
-		One of the fun things you’ll notice is that you may need to put a zero in
-		where a value is represented as a single digit. Notice that the month
-		shown in the start time is 04, not just 4. It’s a simple trick, but
-		worth learning. If you had a fully functioning printf() (or for this
-		example in cprintf()), it would be just a change to the format
-		string. However, your printf() is not capable of that (and don’t
-		spend the month or 6 working on the format characters in the xv6 version of printf()).
-		Isn’t the ternary operator a wonderful thing?
-	 */
+/*Now that you have all this great time tracking information for each process, modify your
+	proc_cps function to display it.
+	One of the fun things you’ll notice is that you may need to put a zero in
+	where a value is represented as a single digit. Notice that the month
+	shown in the start time is 04, not just 4. It’s a simple trick, but
+	worth learning. If you had a fully functioning printf() (or for this
+	example in cprintf()), it would be just a change to the format
+	string. However, your printf() is not capable of that (and don’t
+	spend the month or 6 working on the format characters in the xv6 version of printf()).
+	Isn’t the ternary operator a wonderful thing?
+ */
 	int
-		proc_cps(void)
+proc_cps(void)
+{
+	int i;
+	const char *state = 0x0;
+
+	acquire(&ptable.lock);
+
+	cprintf(
+			"pid\tppid\tname\tstate\tsize"
+			);
+#ifdef PROC_TIMES
+	//# error This is an excellent place to add some new header into to the o/p of cps
+
+	cprintf(
+			"\tstart time\t\tticks\tsched"
+			);
+#endif // PROC_TIMES
+
+	cprintf("\n");
+	for (i = 0; i < NPROC; i++)
+	{
+		if (ptable.proc[i].state != UNUSED) 
 		{
-			int i;
-			const char *state = 0x0;
-
-			acquire(&ptable.lock);
-
-			cprintf(
-					"pid\tppid\tname\tstate\tsize"
-					);
-#ifdef PROC_TIMES
-			//# error This is an excellent place to add some new header into to the o/p of cps
-
-			cprintf(
-					"\tstart time\t\tticks\tsched"
-					);
-#endif // PROC_TIMES
-
-			cprintf("\n");
-			for (i = 0; i < NPROC; i++)
+			if (ptable.proc[i].state >= 0 && ptable.proc[i].state < NELEM(states)
+					&& states[ptable.proc[i].state]) 
 			{
-				if (ptable.proc[i].state != UNUSED) 
-				{
-					if (ptable.proc[i].state >= 0 && ptable.proc[i].state < NELEM(states)
-							&& states[ptable.proc[i].state]) 
-					{
-						state = states[ptable.proc[i].state];
-					}
-					else 
-					{
-						state = "uknown";
-					}
-					cprintf("%d\t%d\t%s\t%s\t%u"
-							, ptable.proc[i].pid
-							, ptable.proc[i].parent ? ptable.proc[i].parent->pid : 1
-							, ptable.proc[i].name
-							, state
-							, ptable.proc[i].sz
-							);
-#ifdef PROC_TIMES
-					//# error this is an excellent place to add some new data to the o/p of cps
-					/*
-						 struct rtcdate {
-						 uint second;
-						 uint minute;
-						 uint hour;
-						 uint day;
-						 uint month;
-						 uint year;
-						 condition ? expression_if_true : expression_if_false;
-						 \t%d-%s%d-%s%d %s%d:%s%d:%s%d\t%u\t%u
-					 */
-					cprintf("\t%d-%s%d-%s%d %s%d:%s%d:%s%d\t%u\t%u"
-							, ptable.proc[i].begin_date.year 
-							, (ptable.proc[i].begin_date.month < 10 ? "0" : "")
-							, ptable.proc[i].begin_date.month
-							, (ptable.proc[i].begin_date.day < 10 ? "0" : "")
-							, ptable.proc[i].begin_date.day
-							, (ptable.proc[i].begin_date.hour < 10 ? "0" : "")
-							, ptable.proc[i].begin_date.hour
-							, (ptable.proc[i].begin_date.minute < 10 ? "0" : "")
-							, ptable.proc[i].begin_date.minute
-							, (ptable.proc[i].begin_date.second < 10 ? "0" : "")
-							, ptable.proc[i].begin_date.second
-							, ptable.proc[i].ticks_total
-							, ptable.proc[i].sched_times
-							);
-
-					/*
-						 cprintf("%d-", ptable.proc[i].begin_date.year);
-						 ptable.proc[i].begin_date.month < 10 ? cprintf("0%d-", ptable.proc[i].begin_date.month) : cprintf("%d-", ptable.proc[i].begin_date.month);
-						 ptable.proc[i].begin_date.day < 10 ? cprintf("0%d ", ptable.proc[i].begin_date.day) : cprintf("%d ", ptable.proc[i].begin_date.day);
-
-						 ptable.proc[i].begin_date.hour < 10 ? cprintf("0%d:", ptable.proc[i].begin_date.hour) : cprintf("%d:", ptable.proc[i].begin_date.hour);
-						 ptable.proc[i].begin_date.minute < 10 ? cprintf("0%d:", ptable.proc[i].begin_date.minute) : cprintf("%d:", ptable.proc[i].begin_date.minute);
-						 ptable.proc[i].begin_date.second < 10 ? cprintf("0%d\t", ptable.proc[i].begin_date.second) : cprintf("%d\t", ptable.proc[i].begin_date.second);
-
-						 cprintf("%d", ptable.proc[i].ticks_total);
-						 cprintf("%d", ptable.proc[i].sched_times);*/
-
-					//----------------------------------------------------------------
-#endif // PROC_TIMES
-					cprintf("\n");
-				}
-				else {
-					// UNUSED process table entry is ignored
-				}
-				}
-
-				release(&ptable.lock);
-				return 0;
+				state = states[ptable.proc[i].state];
 			}
+			else 
+			{
+				state = "uknown";
+			}
+			cprintf("%d\t%d\t%s\t%s\t%u"
+					, ptable.proc[i].pid
+					, ptable.proc[i].parent ? ptable.proc[i].parent->pid : 1
+					, ptable.proc[i].name
+					, state
+					, ptable.proc[i].sz
+					);
+#ifdef PROC_TIMES
+			//# error this is an excellent place to add some new data to the o/p of cps
+			/*
+				 struct rtcdate {
+				 uint second;
+				 uint minute;
+				 uint hour;
+				 uint day;
+				 uint month;
+				 uint year;
+				 condition ? expression_if_true : expression_if_false;
+				 \t%d-%s%d-%s%d %s%d:%s%d:%s%d\t%u\t%u
+			 */
+			cprintf("\t%d-%s%d-%s%d %s%d:%s%d:%s%d\t%u\t%u"
+					, ptable.proc[i].begin_date.year 
+					, (ptable.proc[i].begin_date.month < 10 ? "0" : "")
+					, ptable.proc[i].begin_date.month
+					, (ptable.proc[i].begin_date.day < 10 ? "0" : "")
+					, ptable.proc[i].begin_date.day
+					, (ptable.proc[i].begin_date.hour < 10 ? "0" : "")
+					, ptable.proc[i].begin_date.hour
+					, (ptable.proc[i].begin_date.minute < 10 ? "0" : "")
+					, ptable.proc[i].begin_date.minute
+					, (ptable.proc[i].begin_date.second < 10 ? "0" : "")
+					, ptable.proc[i].begin_date.second
+					, ptable.proc[i].ticks_total
+					, ptable.proc[i].sched_times
+					);
+
+			/*
+				 cprintf("%d-", ptable.proc[i].begin_date.year);
+				 ptable.proc[i].begin_date.month < 10 ? cprintf("0%d-", ptable.proc[i].begin_date.month) : cprintf("%d-", ptable.proc[i].begin_date.month);
+				 ptable.proc[i].begin_date.day < 10 ? cprintf("0%d ", ptable.proc[i].begin_date.day) : cprintf("%d ", ptable.proc[i].begin_date.day);
+
+				 ptable.proc[i].begin_date.hour < 10 ? cprintf("0%d:", ptable.proc[i].begin_date.hour) : cprintf("%d:", ptable.proc[i].begin_date.hour);
+				 ptable.proc[i].begin_date.minute < 10 ? cprintf("0%d:", ptable.proc[i].begin_date.minute) : cprintf("%d:", ptable.proc[i].begin_date.minute);
+				 ptable.proc[i].begin_date.second < 10 ? cprintf("0%d\t", ptable.proc[i].begin_date.second) : cprintf("%d\t", ptable.proc[i].begin_date.second);
+
+				 cprintf("%d", ptable.proc[i].ticks_total);
+				 cprintf("%d", ptable.proc[i].sched_times);*/
+
+			//----------------------------------------------------------------
+#endif // PROC_TIMES
+			cprintf("\n");
+		}
+		else {
+			// UNUSED process table entry is ignored
+		}
+		}
+
+		release(&ptable.lock);
+		return 0;
+	}
 #endif // CPS
