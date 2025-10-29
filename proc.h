@@ -12,6 +12,9 @@ int suptime(void);
 #ifdef LOTTERY
 //# error Some new defines go in here. Things like default, min, and
 //# error max nice values.
+#define DEFAULT_NICE_VALUE 20
+#define MAX_NICE_VALUE 50
+#define MIN_NICE_VALUE 1
 #endif // LOTTERY
 
 // Per-CPU state
@@ -78,6 +81,7 @@ struct proc {
 # endif // PROC_TIMES
 # ifdef LOTTERY
 //#  error something nice should go in here
+	unsigned int nice_value;
 # endif // LOTTERY
 };
 
