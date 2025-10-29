@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef MAXINT
+#define MAXINT ((~ 0x0) & (~ (0x1 << (INTBITS - 1))))
+#endif // MAXINT
+
 #ifndef __USER_H
 # define __USER_H
 
@@ -100,6 +104,7 @@ struct rtcdate;
 
 #ifdef PROC_TIMES
 //# error this would be a good place to #include rand.h
+#include "rand.h"
 #endif // PROC_TIMES
 
 // system calls

@@ -27,6 +27,7 @@ OBJS = \
 	uart.o\
 	vectors.o\
 	vm.o\
+	rand.o\
 	$(NULL)
 #LOTTERY: you'll add the rand.o file in here
 
@@ -153,7 +154,7 @@ tags: $(OBJS) entryother.S _init
 vectors.S: vectors.pl
 	./vectors.pl > vectors.S
 
-ULIB = ulib.o usys.o printf.o umalloc.o
+ULIB = ulib.o usys.o printf.o umalloc.o rand.o
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
@@ -196,6 +197,7 @@ UPROGS=\
 	_ps\
 	_mult\
 	_mfork\
+	_random\
 	$(NULL)
 #LOTTERY - you'll add some new programs into here
 #  mult, mfork, nice, renice, random
